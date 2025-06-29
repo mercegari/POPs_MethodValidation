@@ -1,0 +1,350 @@
+rm(list=ls())
+
+# Load packages
+library(stringr)
+library(ggplot2)
+library(ggpubr)
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(stats)
+library(tidyr)
+library(ggrepel)
+library(kableExtra)
+library(formattable)
+library(forcats)
+library(bookdown)
+library(patchwork)
+library(scales)
+library(psych)
+library(see)
+library(openxlsx)
+
+theme_set(theme_classic() + 
+            theme(text = element_text(family = "Source Sans Pro",
+                                      size = 10)))
+
+
+
+load("../Data/Original_Data_Serum_Method.Rdata")
+rm(list = setdiff(ls(), c("cc_conc_OCs1", "cc_conc_OCs2", "cc_conc_PBDEs1", "a",
+                          "AMAP_OCs", "AMAP_conc", "AMAP_PBDEs", "ME_Rec_tests_PBDEs",
+                          "INTER_cv_PBDEs", "INTRA_cv_PBDEs", "R2_PBDEs")))
+
+
+# Calculation of the real concentrations of QC materials depending on the standards mix
+##OCs_cc1
+qcs_OCs1 <- cc_conc_OCs1 %>%
+  dplyr::select(Compound, `100`, `12`) %>%
+  gather(Level, value, -Compound) %>%
+  mutate(Level = ifelse(Level %in% "100", "QCH", "QCL")) %>%
+  mutate(Conc = (value * 25/100)*(100/500))
+
+##OCs_cc2
+qcs_OCs2 <- cc_conc_OCs2 %>%
+  dplyr::select(Compound, `100`, `12`) %>%
+  gather(Level, value, -Compound) %>%
+  mutate(Level = ifelse(Level %in% "100", "QCH", "QCL")) %>%
+  mutate(Conc = (value * 25/100)*(100/500))
+
+##PBDEs_cc1
+qcs_PBDEs1 <- cc_conc_PBDEs1 %>%
+  dplyr::select(Compound, `3.33`, `33`) %>%
+  gather(Level, value, -Compound) %>%
+  mutate(Level = ifelse(Level %in% "33", "QCH", "QCL")) %>%
+  mutate(Conc = (value * 15/50)*(50/500))
+
+##################----------------------------------------------------------------------------------------
+####OCs
+# Calculation of ME and Recoveries
+tests <- a %>%
+  filter(str_detect(Sample, "ppb")) %>%
+  dplyr::select(Sample, Compound, Sample.Conc..with.Recovery) %>%
+  rename(Conc.calc = Sample.Conc..with.Recovery) %>%
+  mutate(Level = ifelse(str_detect(Sample, "0.5ppb"), "QCL", "QCH")) %>%
+  mutate(Test = ifelse(str_detect(Sample, "Post"), "ME", "Recovery")) %>%
+  left_join(qcs_OCs2) %>%
+  mutate(perc = (Conc.calc / Conc) * 100) %>%
+  group_by(Compound, Test) %>%
+  summarize(mean = mean(perc),
+            sd = sd(perc)) %>%
+  ungroup() 
+tests
+
+####PBDEs
+# Calculation of ME and Recoveries (from excels)
+ME_Rec_tests_PBDEs
+
+####Setting the compound's order by their retention time and family
+RT_order <- c("PeCB", "Tecnazene", "a-HCH", "HCB", "b-HCH", "g-HCH",
+              "Quintozene", "d-HCH", "e-HCH", "PCB28", "VIN", "Hepta-Cl",
+              "PCB52", "Aldrin", "Isodrin", "Octachlorostyrene",
+              "B-Hepta-Cl", "Oxy-Chlordane", "A-Hepta-Cl", 
+              "Trans-Chlordane", "opDDE", "PCB101",
+              "a-Endosulfan",  "Cis-Chlordane", "Dieldrin", "ppDDE",
+              "opDDD", "Endrin", "b-Endosulfan", "PCB118", "ppDDD",
+              "opDDT", "PCB153", "Endosulfan-sulfate", "ppDDT", "PCB138",
+              "Methoxychlor", "PCB180", "Mirex", 
+              "BDE28", "BDE47", "BDE100", "BDE99",
+              "BDE154", "BDE153", "BDE183", "BDE209")
+
+#Merging data bases in Table_S2
+ Table_S2 <- bind_rows(tests, ME_Rec_tests_PBDEs) %>%
+  mutate(mean_sd = 
+           ifelse(Test == "Recovery", 
+                  paste(round(mean,0), " (±", round(sd,0),")"), round(mean,0))) %>%
+  dplyr::select(Compound, Test, mean_sd) %>%
+  spread(Test, mean_sd) %>%
+  rename(ME_100 = ME) %>%
+  mutate(ME_0 = as.numeric(ME_100) - 100) %>%
+  dplyr::select(Compound, ME_0, Recovery, ME_100) %>%
+  arrange(factor(Compound, levels = RT_order)) %>%
+  dplyr::select(-ME_100) %>%
+  rename("Matrix Effect (%)" = ME_0,
+         "Recovery (%)" = Recovery)
+Table_S2
+#write.xlsx(Table_S2, file="ME_Recoveries_paper.xlsx")
+
+all_ME_REC <- bind_rows(tests, ME_Rec_tests_PBDEs) %>%
+  dplyr::select(-sd) %>%
+  spread(Test, mean) %>%
+  rename(ME_100 = ME) %>%
+  mutate(ME_0 = as.numeric(ME_100) - 100) %>%
+  dplyr::select(Compound, ME_0, Recovery, ME_100) %>%
+  arrange(factor(Compound, levels = RT_order)) %>%
+  dplyr::select(-ME_100) %>%
+  gather(Test, mean, -Compound)
+  
+all_ME_REC  
+
+ME_0 <- all_ME_REC %>% 
+  filter(Test %in% "ME_0") %>%
+  ggplot(aes(x=mean, y=reorder(Compound, mean))) +
+  geom_vline(aes(xintercept = -30), size = 0.5, lty= 2, color = "red") +
+  geom_vline(aes(xintercept = 30), size = 0.5, lty= 2, color = "red") +
+  geom_point() +
+  scale_x_continuous(limits=c(-50, 50), 
+                     breaks=c(-50, -30, -15, 0, 15, 30, 50)
+  ) +
+  xlab("Matrix Effect (%)") + ylab("") +
+  theme_bw()
+ME_0 
+
+# Descriptive of matrix effect
+all_ME_REC %>%
+  filter(Test %in% "ME_0") %>%
+  droplevels() %>%
+  dplyr::select(-Test) %>%
+  rename(ME = mean) %>%
+  summarize(mean = mean(ME),
+            sd = sd(ME),
+            min = min(ME), 
+            max = max(ME))
+
+# Plot of Recovery
+REC <- all_ME_REC %>% 
+  filter(Test %in% "Recovery") %>%
+  ggplot(aes(x=mean, y=reorder(Compound, mean))) +
+  geom_point() +
+  geom_vline(aes(xintercept = 70), size = 0.5, lty= 2, color = "red") +
+  geom_vline(aes(xintercept = 130), size = 0.5, lty= 2, color = "red") +
+  scale_x_continuous(limits=c(35, 165), breaks=c(35, 70, 85, 100, 115, 130, 165)) +
+  xlab("Recovery (%)") + ylab("") +
+  theme_bw()
+REC
+
+# Descriptive of Recoveries
+all_ME_REC %>%
+  filter(Test %in% "Recovery") %>%
+  droplevels() %>%
+  dplyr::select(-Test) %>%
+  rename(REC = mean) %>%
+  summarize(mean = mean(REC),
+            sd = sd(REC),
+            min = min(REC), 
+            max = max(REC))
+
+
+p1 <- ggarrange(REC, ME_0, ncol = 2, nrow = 1, labels = c("A", "B"))
+p1
+# print(p1)
+# ggsave("Figure3.pdf", height=6, width=8, device=cairo_pdf) 
+# ggsave("Figure3.png", height=6, width=8) 
+
+
+
+##################----------------------------------------------------------------------------------------
+# Calculation of Precision
+# Repeatability: 2 vials injected on 5 different days (Inter-day precision)
+# Reproducibility: 2 vials injected 5 times in the same day (Intra-day precision)
+#Calculation of OCs' Precision (Part of Table 2)
+Precision <- a %>%
+  filter(str_detect(Sample, "5_"),
+         !str_detect(Sample, "75_")) %>%
+  dplyr::select(Sample, Compound, Sample.Conc..with.Recovery) %>%
+  rename(Conc.calc = Sample.Conc..with.Recovery) %>%
+  mutate(Level = ifelse(str_detect(Sample, "0.5_"), "QCL", "QCH")) %>%
+  mutate(Test = ifelse(str_detect(Sample, "_d"), "Repeatability", "Reproducibility"))
+
+Precision.tests <- Precision %>%
+  group_by(Test, Level, Compound) %>%
+  summarize(mean = mean(Conc.calc, na.rm=TRUE),
+            sd = sd(Conc.calc, na.rm=TRUE),
+            CV = sd/mean*100) %>%
+  ungroup() %>%
+  dplyr::select(-mean, -sd) 
+Precision.tests
+
+Precision_QCH_tests_paper <- Precision.tests %>%
+  spread(Test, CV) %>%
+  dplyr::select(Compound, Level, Repeatability, Reproducibility) %>%
+  rename(`Inter-day precision` = Repeatability,
+         `Intra-day precision` = Reproducibility) %>%
+  filter(Level == "QCH")
+
+Precision_QCL_tests_paper <- Precision.tests %>%
+  spread(Test, CV) %>%
+  dplyr::select(Compound, Level, Repeatability, Reproducibility) %>%
+  rename(`Inter-day precision` = Repeatability,
+         `Intra-day precision` = Reproducibility) %>%
+  filter(Level == "QCL")
+
+#OCs' Precision (Part of Table 2)
+RT_order <- c("PeCB", "Tecnazene", "a-HCH", "HCB", "TBB", "b-HCH", "g-HCH",
+              "Quintozene", "d-HCH", "e-HCH", "PCB28", "VIN", "Hepta-Cl",
+              "PCB52", "Aldrin", "Isodrin", "Octachlorostyrene",
+              "B-Hepta-Cl", "Oxy-Chlordane", "A-Hepta-Cl", 
+              "Trans-Chlordane", "opDDE", "PCB101",
+              "a-Endosulfan",  "Cis-Chlordane", "Dieldrin", "ppDDE",
+              "opDDD", "Endrin", "b-Endosulfan", "PCB118", "ppDDD",
+              "opDDT", "PCB153", "Endosulfan-sulfate", "ppDDT", "PCB138",
+              "Methoxychlor", "PCB180", "Mirex", 
+              "Octachloronaphthalene", "PCB209")
+Level_order <- c("QCL", "QCH")
+
+PrecisionOCs_tests_paper <- bind_rows(Precision_QCL_tests_paper, Precision_QCH_tests_paper) %>%
+  dplyr::select(Compound, Level, `Intra-day precision`, `Inter-day precision`) %>%
+  arrange(factor(Compound, levels = RT_order)) %>%
+  arrange(factor(Level, levels = Level_order))
+PrecisionOCs_tests_paper
+# write.xlsx(PrecisionOCs_tests_paper, file="PrecisionOCs_tests_paper.xlsx")
+
+
+#Calculation of PBDEs' Precision (Part of Table 3)
+INTER_cv_PBDEs <- INTER_cv_PBDEs%>%
+  mutate(Level = ifelse(`Inter-day precision` == 33, "QCH", "QCL")) %>%
+  dplyr::select(Compound, Level, CV) %>%
+  rename(`Inter-day precision` = CV)
+INTER_cv_PBDEs
+
+INTRA_cv_PBDEs <- INTRA_cv_PBDEs%>%
+  mutate(Level = ifelse(`Intra-day precision` == 33, "QCH", "QCL")) %>%
+  dplyr::select(Compound, Level, CV) %>%
+  rename(`Intra-day precision` = CV)
+INTRA_cv_PBDEs
+
+#PBDEs' Precision (Part of Table 3)
+RT_order <- c("BDE28", "BDE47", "BDE100", "BDE99",
+              "BDE154", "BDE153", "BDE183", "BDE209")
+Level_order <- c("QCL", "QCH")
+
+Table1_2 <- INTRA_cv_PBDEs%>%
+  left_join(INTER_cv_PBDEs %>% dplyr::select(Compound, Level, `Inter-day precision`)) %>%
+  arrange(factor(Compound, levels = RT_order)) %>%
+  arrange(factor(Level, levels = Level_order))
+Table1_2
+# write.xlsx(Table1_2, file="PTable1_2.xlsx")
+
+
+##################----------------------------------------------------------------------------------------
+# AMAP results for external validation
+# raw AMAP or corrected by Recoveries (OCs)
+amap.results_OCs <- AMAP_OCs %>%
+  filter(str_detect(Sample, "W")) %>%
+  dplyr::select(Sample, Compound, Sample.Conc..with.Recovery) %>%
+  rename(Calc.conc = Sample.Conc..with.Recovery)
+
+Sample_order <- c("W2107", "W2108", "W1804")
+
+amap.calculation_OCs <- AMAP_conc %>%
+  gather(Compound, Concentration, -Sample) %>%
+  mutate(Concentration = as.numeric(Concentration)) %>%
+  mutate(Conc.min = Concentration - (25/100*Concentration),
+         Conc.max = Concentration + (25/100*Concentration)) %>%
+  filter(!(str_detect(Compound, "PBDE"))) %>%
+  left_join(amap.results_OCs) %>%
+  left_join(tests %>% 
+              dplyr::select(-sd) %>%
+              filter(Test %in% "Recovery")) %>%
+  pivot_wider(names_from = Test, values_from = mean) %>%
+  mutate(Calc.conc2 = Calc.conc * 100/Recovery) %>%
+  filter(Sample %in% c("W2108", "W2107", "W1804")) %>%
+  arrange(Sample) %>%
+  dplyr::select(Sample, Compound, Calc.conc, Conc.min, Conc.max, Concentration, Recovery) 
+amap.calculation_OCs
+
+# raw AMAP or corrected by Recoveries (PBDEs)
+amap.results_BDEs <- AMAP_PBDEs %>%
+  filter(str_detect(Sample, "W")) %>%
+  dplyr::select(Sample, Compound, Conc.calc) %>%
+  rename(Calc.conc = Conc.calc)
+
+amap.calculation_BDEs <- AMAP_conc %>%
+  gather(Compound, Concentration, -Sample) %>%
+  mutate(Concentration = as.numeric(Concentration)) %>%
+  mutate(Conc.min = Concentration - (25/100*Concentration),
+         Conc.max = Concentration + (25/100*Concentration)) %>%
+  filter((str_detect(Compound, "PBDE"))) %>%
+  mutate(Compound = case_when(
+    Compound == "PBDE28" ~ "BDE28",
+    Compound == "PBDE47" ~ "BDE47",
+    Compound == "PBDE99" ~ "BDE99",
+    Compound == "PBDE100" ~ "BDE100",
+    Compound == "PBDE153" ~ "BDE153",
+    Compound == "PBDE154" ~ "BDE154",
+    Compound == "PBDE183" ~ "BDE183",
+    Compound == "PBDE209" ~ "BDE209")) %>%
+  left_join(amap.results_BDEs) %>%
+  left_join(ME_Rec_tests_PBDEs %>% 
+              dplyr::select(-sd)%>%
+              filter(Test %in% "Recovery")) %>%
+  pivot_wider(names_from = Test, values_from = mean) %>%
+  mutate(Calc.conc2 = Calc.conc * 100/Recovery) %>%
+  filter(Sample %in% c("W2108", "W2107", "W1804")) %>%
+  arrange(Sample) %>%
+  dplyr::select(Sample, Compound, Calc.conc, Conc.min, Conc.max, Concentration, Recovery) 
+amap.calculation_BDEs
+
+
+#Merging AMAP results for ploting
+AMAP_plot <- bind_rows(amap.calculation_OCs, amap.calculation_BDEs) %>%
+  mutate(Calc.conc.plot = ifelse(Compound == "b-HCH", Calc.conc * 100/Recovery, Calc.conc))
+AMAP_plot
+
+AMAP_plot %>%
+  filter(Sample %in% c("W2108", "W2107", "W1804")) %>%
+  ggplot() +
+  geom_point(aes(y=Compound, x=Calc.conc.plot), color = "black") +
+  geom_linerange(aes(y=Compound, xmin=Conc.min, xmax=Conc.max), color="blue") +
+  facet_wrap(~Sample, scales="free", ncol=3) +
+  scale_x_log10() +
+  ylab("") + 
+  xlab("Concentration (ng/ml)")
+# ggsave("Figure4.png", height=6, width=8)
+# ggsave("Figure4.pdf", height=6, width=8, device=cairo_pdf) 
+
+#Merging AMAP results for Table S3
+Table_S3 <- bind_rows(amap.calculation_OCs, amap.calculation_BDEs) %>%
+  mutate(Calc.conc.plot = ifelse(Compound == "b-HCH", Calc.conc * 100/Recovery, Calc.conc)) %>%
+  mutate(Conc.min = round(Conc.min,2),
+         Conc.max = round(Conc.max,2)) %>%
+  mutate(`Acceptable range` = paste0(Conc.min, "-", Conc.max),
+         Calc.conc.plot = round(Calc.conc.plot,3),
+         Concentration = round(Concentration,3)) %>%
+  rename(`Laboratory result` = Calc.conc.plot,
+         `Reference result` = Concentration) %>%
+  mutate(Sample = as.factor(Sample)) %>%
+  arrange(factor(Sample, levels = Sample_order)) %>%
+  dplyr::select(Sample, Compound, `Laboratory result`, `Reference result`, `Acceptable range`)
+Table_S3
+# write.xlsx(Table_S3, file="Table_S3.xlsx")

@@ -1,0 +1,141 @@
+rm(list=ls())
+
+# Load packages
+library(ggplot2)
+library(dplyr)
+library(stats)
+library(tidyr)
+library(tidyverse)
+library(ggpubr)
+library(ggrepel)
+library(kableExtra)
+library(formattable)
+library(forcats)
+library(latex2exp)
+library(readxl)
+
+theme_set(theme_classic() + 
+            theme(text = element_text(family = "Source Sans Pro",
+                                      size = 10)))
+
+#Load data
+load("../Data/Original_Data_Serum_Method.Rdata")
+rm(list = setdiff(ls(), c("RampsOCs", "RampsPBDEs")))
+
+#Read OCs' data, modify and rename variables
+RampsOCs <- RampsOCs %>%
+  mutate(Ramps = as.factor(Ramps)) %>%
+  mutate(Flow  = as.factor(Flow)) %>%
+  mutate(Label = as.factor(Label)) %>%
+  rename(Time = "Time (min)") %>%
+  rename(Temp = "Temperature (°C)")
+head(RampsOCs)
+
+#Read PBDEs' data, modify and rename variables
+RampsPBDEs <- RampsPBDEs %>%
+  mutate(Ramps = as.factor(Ramps)) %>%
+  mutate(Flow  = as.factor(Flow)) %>%
+  mutate(Label = as.factor(Label)) %>%
+  rename(Time = "Time (min)") %>%
+  rename(Temp = "Temperature (°C)")
+head(RampsPBDEs)
+
+#Merging data bases (RampsOCs and RampsPBDEs)
+Ramps <- bind_rows(RampsOCs, RampsPBDEs) %>%
+  group_by(Ramp)
+
+
+#Creating new data bases with filtered data 
+RampsOCs2 <- RampsOCs %>%
+  filter(Temp %in% c("90", "170", "200", "210", "215", "290", "310"))
+head(RampsOCs2)
+
+RampsPBDEs2 <- RampsPBDEs %>%
+  filter(Temp %in% c("90", "200", "275", "300", "310"))
+head(RampsPBDEs2)
+
+#Merging new data bases with filtered data (RampsOCs2 and RampsPBDEs2)
+Ramps2 <- bind_rows(RampsOCs2, RampsPBDEs2) %>%
+  group_by(Ramp)
+
+
+#Ploting oven programs
+ggplot(data = Ramps2, aes(x = Time, y = Temp, shape= Flow, color = Ramp)) +
+  geom_point(data = Ramps2 %>% filter(Ramp == "PBDEs")) +
+  geom_line(data = Ramps2 %>% filter(Ramp == "PBDEs"), lwd = 1) +
+  geom_label(data = Ramps %>%
+               filter(Time == "0" & Ramp == "PBDEs"),
+             aes(x=-5, label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "4.25" & Ramps == "1" & Ramp == "PBDEs"),
+             aes(x=9, y=185, label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "5.25" & Ramp == "PBDEs"),
+             aes(x=15.5, y=230,  label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "19.25" & Ramp == "PBDEs"),
+             aes(x=24.5, y=287.5, label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "29.875" & Ramps =="3" & Ramp == "PBDEs"),
+             aes(x=15, y=300, label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "30.875" & Ramp == "PBDEs"),
+             aes(x=35.5, y=302.5, label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "32.875" & Ramp == "PBDEs"),
+             aes(x=25.5, y=310,label=Label), size=3,
+             fill = "white", color = "#952A95", show.legend = FALSE) +
+  geom_point(data = Ramps2 %>% filter(Ramp == "OCs")) +
+  geom_line(data = Ramps2 %>% filter(Ramp == "OCs"), lwd = 1) +
+  geom_label(data = Ramps %>%
+               filter(Time == "2" & Ramp == "OCs"),
+             aes(x=7, label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "20" & Ramp == "OCs"),
+             aes(x=23.25, y=179, label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "42" & Ramp == "OCs"),
+             aes(x=48.75, y=199,  label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "55" & Ramp == "OCs"),
+             aes(x=60, y=206.5, label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "64" & Ramp == "OCs"),
+             aes(x=69, label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "76" & Ramp == "OCs"),
+             aes(x=65.75,label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "77" & Ramp == "OCs"),
+             aes(x=81.50, y=300,label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  geom_label(data = Ramps %>%
+               filter(Time == "85" & Ramp == "OCs"),
+             aes(x=72.25, label=Label), size=3,
+             fill = "white", color = "black", show.legend = FALSE) +
+  scale_colour_manual(values = c("black", "#952A95")) +
+  scale_x_continuous(breaks=c(0, 17, 34, 51, 68, 85)) +
+  ylab("Temperature (°C)") +
+  xlab("Time (min)") +
+  theme(legend.position = "bottom") +
+  guides(
+    col = guide_legend(ncol = 6),
+    fill = guide_legend(order = 2),
+    shape = guide_legend(order = 1))
+
+#ggsave("Figure1.png", height=6, width=8)
+#ggsave("Figure1.pdf", height=6, width=8, device=cairo_pdf) 
+
+
